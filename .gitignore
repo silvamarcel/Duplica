@@ -63,3 +63,9 @@ node_modules/
 
 # dotenv environment variables file
 .env
+
+# OS files
+.DS_Store
+
+# Security files
+duplicaAppLocalKey.json
