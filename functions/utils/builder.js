@@ -1,21 +1,31 @@
-const { admin } = require('./admin');
+const moment = require('moment');
+
+const getNow = () => moment().toISOString();
 
 const getPlainDataWithId = doc => {
   const data = doc.data();
   data.id = doc.id;
-  data.createdAt = data.createdAt.toDate();
-  data.updatedAt = data.updatedAt.toDate();
   return data;
 };
 
-const buildDataWithAudit = data => {
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  data.createdAt = data.createdAt || now;
+const buildDataWithAudit = (data, createdAt) => {
+  const now = getNow();
+  data.createdAt = createdAt || now;
   data.updatedAt = now;
+  data.deletedAt = null;
+  return data;
+};
+
+const getDeletedData = doc => {
+  const data = doc.data();
+  const now = getNow();
+  data.updatedAt = now;
+  data.deletedAt = now;
   return data;
 };
 
 module.exports = {
   getPlainDataWithId,
-  buildDataWithAudit
+  buildDataWithAudit,
+  getDeletedData,
 };

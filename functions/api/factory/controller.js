@@ -2,7 +2,8 @@ const appError = require('../../utils/error');
 const { db } = require('../../utils/admin');
 const {
   buildDataWithAudit,
-  getPlainDataWithId
+  getPlainDataWithId,
+  getDeletedData,
 } = require('../../utils/builder');
 const appValidation = require('../../utils/validation');
 
@@ -13,12 +14,26 @@ const goNext = (doc, req, next) => {
   return next();
 };
 
+const getDoc = (id) => {
+  return factoriesRef.doc(id);
+};
+
+const getById = (id) => {
+  return getDoc(id).get();
+};
+
+const getByName = (name) => {
+  return factoriesRef
+    .where('name', '==', name)
+    .get();
+};
+
 const params = (req, res, next, id) => {
-  factoriesRef.doc(id)
-    .get()
+  getById(id)
     .then(doc => {
-      if (!doc.exists) {
-        return next(appError.buildError(null, 403, 'Invalid id'));
+      const data = doc.data() || {};
+      if (!doc.exists || data.deletedAt) {
+        return next(appError.buildError(null, 404, 'Factory not found!'));
       }
       return goNext(doc, req, next);
     })
@@ -40,10 +55,17 @@ const list = (req, res, next) => {
 };
 
 const create = async (req, res, next) => {
-  appValidation.validateRequest(req, res);
-  return factoriesRef.add(buildDataWithAudit(req.body))
+  await appValidation.validateRequest(req, res);
+  const newFactory = buildDataWithAudit(req.body);
+  const docs = await getByName(newFactory.name);
+  if (!docs.empty) {
+    return next(appError.buildError(null, 409, 'Factory already exists!'));
+  }
+  return factoriesRef
+    .add(newFactory)
     .then(doc => {
-      return doc.get();
+      const { id } = doc;
+      return getById(id);
     })
     .then(doc => {
       return res.json(getPlainDataWithId(doc));
@@ -51,29 +73,28 @@ const create = async (req, res, next) => {
     .catch(appError.catchError(next));
 };
 
-const read = (req, res, next) => {
-  if (!req.factory.exists) {
-    return next(appError.buildError(null, 404, 'Factory not found!'));
-  }
-  return res.json(getPlainDataWithId(req.factory));
-};
+const read = (req, res) => res.json(getPlainDataWithId(req.factory));
 
 const update = async (req, res, next) => {
-  appValidation.validateRequest(req, res);
-  return req.factory.update(req.body)
-    .then(doc => {
-      return res.json(getPlainDataWithId(doc));
+  await appValidation.validateRequest(req, res);
+  const actualFactory = getPlainDataWithId(req.factory);
+  const factory = buildDataWithAudit(req.body, actualFactory.createdAt);
+  return getDoc(req.factory.id)
+    .update(factory)
+    .then(() => {
+      return getById(req.factory.id);
     })
+    .then((doc) => res.json(getPlainDataWithId(doc)))
     .catch(appError.catchError(next));
 };
 
 const deleteFactory = async (req, res, next) => {
-  if (!req.factory.exists) {
-    return next(appError.buildError(null, 404, 'Factory not found!'));
-  }
-  return req.factory.delete()
-    .then(doc => {
-      return res.json(getPlainDataWithId(doc));
+  const doc = await getById(req.factory.id);
+  const factory = getDeletedData(doc);
+  return getDoc(req.factory.id)
+    .update(factory)
+    .then(() => {
+      return res.json('Factory successfully deleted!');
     })
     .catch(appError.catchError(next));
 };
